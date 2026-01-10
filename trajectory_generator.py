@@ -35,10 +35,12 @@ class TrajectoryGenerator:
             ref_vel (float): The expected average velocity of the trajectory.
         """
         self.path_points = path_points
-        self.ref_vel = ref_vel
+        self.ref_vel = ref_vel 
 
         self.tradj_dict = dict({})
         '''traj_dict (dict): {'X-coeff': np.ndarray, 'Y-coeff': np.ndarray, 'Z-coeff': np.ndarray, time_points: np.ndarray}'''
+        self.traj_dict_dens = dict({})
+        ''' traj_dict_dens (dict): {'x': np.ndarray, 'y': np.ndarray, 'z': np.ndarray} -> A more dense trajectory sequence''' 
     
     def TrajectorySolve(self):
         '''
@@ -88,7 +90,7 @@ class TrajectoryGenerator:
             time_dense (int): How often should a point be plotted (in seconds)
         """  
 
-        traj_dict_plot = dict({'x': [], 'y': [], 'z': []})
+        traj_dict_dens = dict({'x': [], 'y': [], 'z': []})
 
         if self.tradj_dict is None:
             raise ValueError("Error: Please run TrajectorySolve() first")
@@ -126,7 +128,9 @@ class TrajectoryGenerator:
                     co = coeff_z[base : base+6]
                 val = co[0] + co[1]*t_local + co[2]*t_local**2 + \
                 co[3]*t_local**3 + co[4]*t_local**4 + co[5]*t_local**5 # Calculate the the value by local time
-                traj_dict_plot[axis].append(val)
+                traj_dict_dens[axis].append(val)
+
+        self.traj_dict_dens = traj_dict_dens # Update the variable
 
         fig, axes = plt.subplots(3, 1, figsize=(9, 9), sharex=True) # Start visualization     
         labels = ['X Position (m)', 'Y Position (m)', 'Z Position (m)']
@@ -134,7 +138,7 @@ class TrajectoryGenerator:
         path_arr =self.path_points # Original waypoints
         for i, ax in enumerate(axes):
             key = axis_keys[i]
-            ax.plot(time_series, traj_dict_plot[key], label=labels[i],
+            ax.plot(time_series, traj_dict_dens[key], label=labels[i],
                     color='teal', lw=1.5)
             ax.scatter(time_points, path_arr[:,i], label='Waypoints',
                        color='navy', marker='o', zorder=5 )
@@ -288,40 +292,84 @@ class TrajectoryGenerator:
         
         sol = np.linalg.solve(kkt_mat, rhs_vec)
         return sol[:Q.shape[0]] # return the param vector of each trajectory segment (a0-a5)
+    
+    import numpy as np
+
+    def linear_interpolate_path(self, lim_dist):
+        """
+        Perform linear interpolation on a 3D path to ensure the distance between
+        consecutive points does not exceed lim_dist.
         
+        Parameters:
+            path (np.ndarray): Original path points with shape (n, 3), where n is the number of points.
+            lim_dist (float): Maximum allowed distance between consecutive points.
+        """
+
+        interp_points = [self.path_points[0]]  # Start with the first point.
+        
+        for i in range(len(self.path_points) - 1):
+            p1 = self.path_points[i]
+            p2 = self.path_points[i + 1]
+            
+            # Calculate the distance between the current two points.
+            dist = np.linalg.norm(p2 - p1)
+            
+            if dist <= lim_dist:
+                # If the distance meets the requirement, directly add the next point.
+                interp_points.append(p2)
+            else:
+                # Interpolation is needed. Calculate the number of points to insert.
+                num_insert = int(np.floor(dist / lim_dist)) # Integer division determines the number of insertions (excluding endpoints).
+                
+                # Linear interpolation parameters.
+                for j in range(1, num_insert + 1):
+                    
+                    t = j * lim_dist / dist # Calculate the interpolation ratio.
+                    # Linear interpolation.
+                    interp_point = p1 + t * (p2 - p1)
+                    interp_points.append(interp_point)
+                
+                # Note: If dist/lim_dist is an integer, the last inserted point may be exactly at p2.
+                
+                last_dist = np.linalg.norm(p2 - interp_points[-1]) # # We need to check if the last inserted point is close enough to p2.
+                if last_dist > 1e-10:  # Avoid floating-point errors.
+                    interp_points.append(p2)
+        
+        self.path_points = np.array(interp_points) # Update the path with the interpolated points.
 
 
 if __name__ == "__main__":
 
-    # trajectory-gen test code
-    uav_path = np.array([
-        [0.0,   0.0,   0.0],
-        [1.0,   0.2,   0.1],
-        [2.0,   0.8,   0.3],
-        [3.0,   1.6,   0.6],
-        [4.0,   2.5,   1.0],
-        [5.0,   3.3,   1.5],
-        [6.0,   3.8,   2.1],
-        [7.0,   4.0,   2.8],
-        [8.0,   3.9,   3.6],
-        [9.0,   3.5,   4.5],
-        [10.0,  2.8,   5.5],
-        [11.0,  2.0,   6.6],
-        [12.0,  1.2,   7.8],
-        [13.0,  0.6,   9.1],
-        [14.0,  0.3,  10.5],
-        [15.0,  0.5,  12.0],
-        [16.0,  1.1,  13.6],
-        [17.0,  2.1,  15.3],
-        [18.0,  3.4,  17.1],
-        [19.0,  5.0,  19.0]
-    ])
+    pass
+    # # trajectory-gen test code
+    # uav_path = np.array([
+    #     [0.0,   0.0,   0.0],
+    #     [1.0,   0.2,   0.1],
+    #     [2.0,   0.8,   0.3],
+    #     [3.0,   1.6,   0.6],
+    #     [4.0,   2.5,   1.0],
+    #     [5.0,   3.3,   1.5],
+    #     [6.0,   3.8,   2.1],
+    #     [7.0,   4.0,   2.8],
+    #     [8.0,   3.9,   3.6],
+    #     [9.0,   3.5,   4.5],
+    #     [10.0,  2.8,   5.5],
+    #     [11.0,  2.0,   6.6],
+    #     [12.0,  1.2,   7.8],
+    #     [13.0,  0.6,   9.1],
+    #     [14.0,  0.3,  10.5],
+    #     [15.0,  0.5,  12.0],
+    #     [16.0,  1.1,  13.6],
+    #     [17.0,  2.1,  15.3],
+    #     [18.0,  3.4,  17.1],
+    #     [19.0,  5.0,  19.0]
+    # ])
 
-    traj_generator = TrajectoryGenerator(uav_path, 1.0)
-    traj_generator.TrajectorySolve()
-    ans_dict = traj_generator.tradj_dict
-    for key in ans_dict.keys():
-        print(key, ":\n", ans_dict[key])
+    # traj_generator = TrajectoryGenerator(uav_path, 1.0)
+    # traj_generator.TrajectorySolve()
+    # ans_dict = traj_generator.tradj_dict
+    # for key in ans_dict.keys():
+    #     print(key, ":\n", ans_dict[key])
 
-    traj_generator.PlotTrajectory(0.05)
+    # traj_generator.PlotTrajectory(0.05)
 
